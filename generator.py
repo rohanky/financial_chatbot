@@ -1,21 +1,36 @@
-# generator.py
+from openai import AzureOpenAI
+import os
 
-import openai
+openai_client_generator = AzureOpenAI(
+    api_key=os.getenv("AZURE_OPENAI_KEY"),
+    api_version="2023-07-01-preview",
+    azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT")
+)
 
-class ResponseGenerator:
-    def __init__(self, api_key, endpoint, deployment_id):
-        openai.api_key = api_key
-        openai.api_base = endpoint
-        openai.api_type = "azure"
-        openai.api_version = "2023-05-15"  # Adjust based on Azure OpenAI version
-        self.deployment_id = deployment_id
+class Generator:
+    def __init__(self):
+        self.model = "gpt-4o"  # Adjust if needed
 
-    def generate_response(self, query, context):
-        """Generate a response based on the query and context using Azure OpenAI."""
-        prompt = f"Context: {context}\n\nQuestion: {query}\n\nAnswer:"
-        response = openai.Completion.create(
-            engine=self.deployment_id,
-            prompt=prompt,
-            max_tokens=200
+    def generate_response(self, query, documents):
+        """
+        Generate response using Azure OpenAI by combining query and top documents.
+        """
+        context = "\n".join([doc['Content'][:1000] for doc in documents])  # Limit context
+
+        prompt = (
+            f"Answer the question based on the context below:\n\n"
+            f"Context: {context}\n\n"
+            f"Question: {query}\n\n"
+            f"Answer:"
         )
-        return response.choices[0].text.strip()
+
+        response = openai_client_generator.chat.completions.create(
+            model=self.model,
+            messages=[
+                {"role": "system", "content": "You are a financial assistant."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.2,
+            max_tokens=500
+        )
+        return response.choices[0].message.content

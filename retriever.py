@@ -1,72 +1,126 @@
-# retriever.py
-
-import os
+import pandas as pd
 import faiss
 import numpy as np
-from PyPDF2 import PdfReader
-from bs4 import BeautifulSoup
-from sentence_transformers import SentenceTransformer
+import os
+from openai import AzureOpenAI
+
+EMBEDDING_MODEL = "text-embedding-3-large"  # Adjust if necessary
+
+# Initialize Azure OpenAI client
+openai_client = AzureOpenAI(
+    api_key=os.getenv("AZURE_OPENAI_KEY"),
+    api_version="2023-07-01-preview",
+    azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT")
+)
 
 
-class DocumentRetriever:
-    def __init__(self, data_path='data/', model_name='all-MiniLM-L6-v2'):
-        self.data_path = data_path
-        self.model = SentenceTransformer(model_name)
-        self.index = None
-        self.docs = []
+class Retriever:
+    def __init__(self, index_file=None, data_file=None):
+        """
+        Initialize the retriever by loading data and FAISS index.
+        """
+        self.embedding_dimension = 768  # Adjust based on your embedding model
+        self.data = self.load_and_group_data(data_file)
+        self.index = self.load_or_create_index(index_file)
 
-    def extract_text_from_pdf(self, file_path):
-        """Extract text from a PDF file."""
-        text = ""
-        with open(file_path, 'rb') as f:
-            reader = PdfReader(f)
-            for page in reader.pages:
-                text += page.extract_text()
-        return text
+    def load_and_group_data(self, file_path):
+        """
+        Load and group data by Company, File Name, and Page Number.
+        """
+        df = pd.read_excel(file_path)
+        grouped_df = (
+            df.groupby(['Company', 'File Name', 'Page Number'], as_index=False)
+            .agg({'Content': lambda x: ' '.join(x.dropna().astype(str))})
+        )
+        return grouped_df
 
-    def extract_text_from_html(self, file_path):
-        """Extract text from an HTML file."""
-        with open(file_path, 'r', encoding='utf-8') as f:
-            soup = BeautifulSoup(f, 'html.parser')
-            text = soup.get_text()
-        return text
+    def generate_embeddings(self, texts):
+        """
+        Generate text embeddings using Azure OpenAI Embedding API.
+        """
+        response = openai_client.embeddings.create(
+            model=EMBEDDING_MODEL,
+            input=texts
+        )
 
-    def ingest_documents(self):
-        """Extract text from all PDF and HTML files and store them."""
-        for company in os.listdir(self.data_path):
-            company_path = os.path.join(self.data_path, company)
-            if os.path.isdir(company_path):
-                for file in os.listdir(company_path):
-                    file_path = os.path.join(company_path, file)
-                    if file.endswith('.pdf'):
-                        text = self.extract_text_from_pdf(file_path)
-                    elif file.endswith('.html'):
-                        text = self.extract_text_from_html(file_path)
-                    else:
-                        continue
+        # Extract embeddings from the response
+        embeddings = np.array([embedding.embedding for embedding in response.data])
+        return embeddings
 
-                    # Store the text along with the file name and company
-                    self.docs.append({"company": company, "file_name": file, "content": text})
+    def generate_embedding_for_row(self, text):
+        """
+        Generate embeddings for a single row's content.
 
-    def build_index(self):
-        """Create a FAISS index from the document embeddings."""
-        embeddings = []
-        for doc in self.docs:
-            doc_embedding = self.model.encode(doc['content'])
-            embeddings.append(doc_embedding)
+        Args:
+        - text (str): The text content for which to generate embeddings.
 
-        # Build FAISS index (L2 distance)
-        self.index = faiss.IndexFlatL2(embeddings[0].shape[0])
-        self.index.add(np.array(embeddings))
+        Returns:
+        - np.ndarray: The generated embedding as a NumPy array.
+        """
+        if not isinstance(text, str) or text.strip() == "":
+            # Return a zero vector for invalid or empty content
+            return np.zeros((self.embedding_dimension,))
+        return self.generate_embeddings([text])[0]
 
-    def retrieve(self, query, top_k=3):
-        """Retrieve top-k documents for a given query."""
-        query_embedding = self.model.encode(query).reshape(1, -1)
+    def build_faiss_index(self):
+        """
+        Build FAISS index from grouped data.
+        """
+        # Generate embeddings for each row in 'Content'
+        self.data['Embeddings'] = self.data['Content'].apply(self.generate_embedding_for_row)
+
+        # Combine embeddings into a single NumPy array
+        embeddings = np.vstack(self.data['Embeddings'].tolist())
+        dimension = embeddings.shape[1]
+
+        # Build the FAISS index
+        index = faiss.IndexFlatL2(dimension)
+        index.add(embeddings)
+
+        return index
+
+    def load_or_create_index(self, index_file):
+        """
+        Load an existing FAISS index or create a new one.
+        """
+        if index_file and os.path.exists(index_file):
+            index = faiss.read_index(index_file)
+        else:
+            index = self.build_faiss_index()
+        return index
+
+    def save_faiss_index(self, index_file):
+        """
+        Save FAISS index to a file.
+        Ensure that the directory exists before writing the file.
+        """
+        # Ensure the directory exists
+        directory = os.path.dirname(index_file)
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+
+        faiss.write_index(self.index, index_file)
+
+    def search(self, query, top_k=5):
+        """
+        Search the FAISS index for the top K most relevant documents.
+        """
+        # Generate embedding for the query
+        query_embedding = self.generate_embeddings([query])
+        
+        # Perform the search
         distances, indices = self.index.search(query_embedding, top_k)
-        return [(self.docs[idx][['company', 'file_name']], self.docs[idx]['content']) for idx in indices[0]]
 
-# Example Usage:
-# retriever = DocumentRetriever()
-# retriever.ingest_documents()
-# retriever.build_index()
-# retriever.retrieve("What is the revenue for 2023?")
+        results = []
+        for idx, dist in zip(indices[0], distances[0]):
+            if idx == -1:  # Skip if no match found
+                continue
+            result = {
+                "Company": self.data.iloc[idx]['Company'],
+                "File Name": self.data.iloc[idx]['File Name'],
+                "Page Number": self.data.iloc[idx]['Page Number'],
+                "Content": self.data.iloc[idx]['Content'],
+                "Distance": dist
+            }
+            results.append(result)
+        return results
