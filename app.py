@@ -49,7 +49,7 @@ query = st.text_input("💬 Enter your financial query:")
 
 if query:
     # Step 1: Refine the query
-    refined_questions = generator.generate_context(query)
+    refined_questions = generator.generate_context(query,st.session_state.conversation_history)
 
 
     # Step 2: Retrieve and process results
@@ -98,6 +98,6 @@ if query:
     # Save conversation history
     st.session_state['conversation_history'].append({
         "query": query,
-        "Context": extended_context
+        "Context": extended_context,
         "response": final_answer
     })
