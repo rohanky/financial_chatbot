@@ -17,7 +17,7 @@ class DocumentReader:
                 text_elements = page.extract_text().split("\n") if page.extract_text() else []
                 for element_number, text in enumerate(text_elements, start=1):
                     extracted_data.append({
-                        'Page Number': page_number,
+                        'Page Number': page_number+1,
                         'Element Number': element_number,
                         'Content': text
                     })

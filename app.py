@@ -9,9 +9,10 @@ if 'conversation_history' not in st.session_state:
 
 def reset_conversation_history():
     """
-    Reset the conversation history when slider value changes.
+    Reset the conversation history and extended context when slider value changes.
     """
     st.session_state['conversation_history'] = []
+    st.session_state['extended_context'] = []
 
 # Constants
 PARSED_DATA_FILE = 'parsed_data.xlsx'
@@ -21,8 +22,8 @@ INDEX_FILE = 'faiss_index/faiss_index.index'
 st.set_page_config(page_title="Financial Chatbot", layout="wide")
 
 # Title and Description
-st.title("📊 Financial Document Chatbot (RAG)")
-st.write("Ask questions about financial documents from Crayon, SoftwareOne, and Uber.")
+st.write("### 📊 Financial Chatbot")
+st.write("This chatbot helps you answer questions based on detailed financial reports from companies like Crayon, SoftwareOne, and Uber. Ask questions about specific financial metrics, revenue, growth, and more!")
 
 # Load FAISS index and data
 @st.cache_resource
@@ -31,10 +32,10 @@ def load_retriever_and_generator():
     Load or initialize the retriever and generator.
     """
     if os.path.exists(INDEX_FILE):
-        st.write("Loading FAISS index...")
+        st.write("🔄 Loading FAISS index...")
         retriever = Retriever(index_file=INDEX_FILE, data_file=PARSED_DATA_FILE)
     else:
-        st.write("Building FAISS index from scratch...")
+        st.write("🛠️ Building FAISS index from scratch...")
         retriever = Retriever(data_file=PARSED_DATA_FILE)
         retriever.save_faiss_index(INDEX_FILE)
 
@@ -47,49 +48,55 @@ retriever, generator = load_retriever_and_generator()
 query = st.text_input("💬 Enter your financial query:")
 
 if query:
-    # Allow the user to adjust the FAISS-TFIDF weight using a float slider
+    # Step 1: Refine the query
+    refined_questions = generator.generate_context(query)
+
+
+    # Step 2: Retrieve and process results
+    extended_context = []
     faiss_weight = st.slider(
-        "🔄 Adjust FAISS-TFIDF weight",
-        min_value=0.0,  # Float minimum value
-        max_value=1.0,  # Float maximum value
-        value=0.5,  # Default slider value
-        step=0.05,  # Step increment
-        key="slider", 
-        on_change=reset_conversation_history  # Reset conversation history on change
+        "Adjust FAISS Weight (Semantic Search vs Keyword Search)", 
+        min_value=0.0, 
+        max_value=1.0, 
+        value=0.99, 
+        step=0.1,
+        help="0.0 gives full weight to keyword-based search, 1.0 gives full weight to FAISS semantic search."
     )
 
-    # Display current conversation history
-    st.write("Conversation History:", st.session_state['conversation_history'])
+    # Reset conversation history and context when the slider is moved
+    reset_conversation_history()
 
-    # Add to conversation history (for testing purposes)
-    if st.button("Add to Conversation"):
-        st.session_state['conversation_history'].append(f"Message at slider {faiss_weight}")
-        st.write("Conversation History Updated:", st.session_state['conversation_history'])
+    if 'none' in refined_questions[0].lower():
+        st.write('⚡ Generating quick response...')
+        results = retriever.hybrid_search(query, top_k=10, faiss_weight=faiss_weight)  # Use slider value for weight
+        extended_context.append(results)
+    else:
+        st.write('🔍 Analyzing in depth...')
+        # Process refined questions and use the slider weight
+        for sub_query in refined_questions:
+            
+            #st.write(f"Retrieving results for: {sub_query}")
+            results = retriever.hybrid_search(sub_query, top_k=10, faiss_weight=faiss_weight)  # Use slider value for weight
+            # Generate response
+            #st.write("🧠 Generating response...")  
+            response = generator.generate_response(sub_query, results, st.session_state.conversation_history)
+            #st.success(response)  # Display response in a success box
 
-    # Display search results
-    st.write("🔍 Searching relevant documents...")
-    results = retriever.hybrid_search(query, top_k=10, faiss_weight=faiss_weight)
+            extended_context.append({
+                "question": sub_query,
+                "answer": response
+            })
 
-    # Generate response
-    st.write("🧠 Generating response...")
-    response = generator.generate_response(query, results, st.session_state.conversation_history)
-    st.success(response)  # Display response in a success box
 
-    # Display retrieved results (top 5 contexts)
-    st.write(f"### Found {len(results)} relevant documents (Top 5 shown):")
-    for idx, result in enumerate(results[:]):
-        st.write(f"**Document {idx + 1}**")
-        st.write(f"**Company**: {result['Company']}")
-        st.write(f"**File Name**: {result['File Name']}")
-        st.write(f"**Page Number**: {result['Page Number']}")
-        st.write(f"**Content**: {result['Content'][:500]}...")  # Limit content for display
-        
-        # Display the source and scores
-        st.write(f"**Source**: {'Semantic (FAISS)' if result.get('FAISS Score') is not None else 'Lexical (TF-IDF)'}")
-        st.write(f"**FAISS Score**: {result['FAISS Score']:.4f}")  # Display FAISS Score
-        st.write(f"**TF-IDF Similarity**: {result['TF-IDF Similarity']:.4f}")
-        st.write(f"**Combined Score**: {result['Combined Score']:.4f}")
-        st.write("---")
 
+    final_answer = generator.generate_response_final(query, extended_context, st.session_state.conversation_history)
+    st.success(final_answer) 
+
+    st.write("### Extended Context (optional):")
+    with st.expander("Click to expand extended context"):
+        st.write(extended_context)
     # Save conversation history
-    st.session_state.conversation_history.append({"query": query, "response": response})
+    st.session_state['conversation_history'].append({
+        "query": query,
+        "response": final_answer
+    })
