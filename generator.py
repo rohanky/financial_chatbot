@@ -15,21 +15,24 @@ class Generator:
 
 
 
-    def generate_context(self, query):
+    def generate_context(self, query, conversation_history):
         prompt = (
             f"You are an AI assistant specialized in analyzing financial reports and generating actionable insights. "
             f"Your task is to decompose complex financial-related questions into multiple prerequisite sub-questions, each focused on a specific object, entity, or timeline. "
+            f"- If the question is about fact or entity recognition, make sure you add/assume year based on the tense used.\n"
             f"This decomposition ensures that each sub-question targets a distinct aspect of the main query, enabling more precise information retrieval. "
             f"\n\nGuidelines:\n"
             f"- Decompose questions with multiple objects, entities, or timelines into individual sub-questions.\n"
             f"- Ensure no single sub-question includes multiple objects, entities, or timelines.\n"
             f"When generating sub-questions, make sure it is highly contextual so that it matches with the relative context in vector search. \n"
             f"- If the main question is straightforward and does not require decomposition, return the same question or 'None'.\n\n"
+            f"Conversation History: {conversation_history}.\n\n"
         )
 
         response = openai_client_generator.chat.completions.create(
             model=self.model,
             messages=[
+        
                 {"role": "system", "content": prompt},
                 {"role": "user", "content": f"Question: {query}"},
                 {"role": "user", "content": "Sub-Questions:"}
@@ -61,6 +64,7 @@ class Generator:
             f"Conversation History: {conversation_history}.\n\n"
             f"Context: {documents}\n\n"
             f"Question: {query}\n\n"
+            f"If the question, can be answered using Conversation History, answer from Conversation History.\n"
 
         )
 

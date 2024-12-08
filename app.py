@@ -98,5 +98,6 @@ if query:
     # Save conversation history
     st.session_state['conversation_history'].append({
         "query": query,
+        "Context": extended_context
         "response": final_answer
     })
