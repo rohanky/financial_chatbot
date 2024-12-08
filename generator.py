@@ -98,9 +98,9 @@ class Generator:
         response = openai_client_generator.chat.completions.create(
             model=self.model,
             messages=[
-                {"role": "system", "content": f"You are a financial assistant. Read the entire content carefully to find the exact information. The context may not have direct answer but if you look into it carefully and detailed specially the units of currency(comparison should be in same currency), you will infere the necessary inforamtion to find the answer. Then do simple mathematical analysis and report the answer and explain the reason for each calculation in your mind. Also provide reference for answer as sentence where it can be found."},
+                {"role": "system", "content": f"You are a financial assistant chatbot. Read the entire content carefully to find the exact information. The context may not have direct answer but if you look into it carefully and detailed specially the units of currency(comparison should be in same currency), you will infere the necessary inforamtion to find the answer. Then do simple mathematical analysis and report the answer and explain the reason for each calculation in your mind. Also provide reference for answer as sentence where it can be found."},
                 {"role": "user", "content": prompt},
-                {"role": "user", "content": "Answer like a chatbot."}
+
             ],
             temperature=0.5,
             max_tokens=2500
