@@ -54,14 +54,7 @@ if query:
 
     # Step 2: Retrieve and process results
     extended_context = []
-    faiss_weight = st.slider(
-        "Adjust FAISS Weight (Semantic Search vs Keyword Search)", 
-        min_value=0.0, 
-        max_value=1.0, 
-        value=0.99, 
-        step=0.1,
-        help="0.0 gives full weight to keyword-based search, 1.0 gives full weight to FAISS semantic search."
-    )
+    faiss_weight = 1
 
     # Reset conversation history and context when the slider is moved
     reset_conversation_history()
@@ -71,7 +64,7 @@ if query:
         results = retriever.hybrid_search(query, top_k=10, faiss_weight=faiss_weight)  # Use slider value for weight
         extended_context.append(results)
     else:
-        st.write('🔍 Analyzing in depth...')
+        st.write('🔍 Analyzing in depth...This might take a while...')
         # Process refined questions and use the slider weight
         for sub_query in refined_questions:
             
@@ -84,6 +77,7 @@ if query:
 
             extended_context.append({
                 "question": sub_query,
+                "context": results,
                 "answer": response
             })
 

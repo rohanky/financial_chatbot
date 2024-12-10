@@ -22,10 +22,12 @@ class Generator:
             f"- If the question is about fact or entity recognition, make sure you add/assume year based on the tense used.\n"
             f"This decomposition ensures that each sub-question targets a distinct aspect of the main query, enabling more precise information retrieval. "
             f"\n\nGuidelines:\n"
+            f" At times, the question can be follow up from Query from coversation history. In this case sub question shoud be the previous question from conversation history."
             f"- Decompose questions with multiple objects, entities, or timelines into individual sub-questions.\n"
             f"- Ensure no single sub-question includes multiple objects, entities, or timelines.\n"
             f"When generating sub-questions, make sure it is highly contextual so that it matches with the relative context in vector search. \n"
             f"- If the main question is straightforward and does not require decomposition, return the same question or 'None'.\n\n"
+            f"At times, the questions are ambiguous or incomplete or vague, in that case, return None.\n"
             f"Conversation History: {conversation_history}.\n\n"
         )
 
@@ -46,8 +48,10 @@ class Generator:
             sub_question.strip() + '?' if not sub_question.endswith('?') else sub_question.strip() 
             for sub_question in re.split(r'(?<=\?)', output) if sub_question.strip()
         ]
-
+        print("#############################")
+        print("List of Sub Questions......")
         print(sub_questions)
+        print("#############################")
         return sub_questions
 
 
@@ -64,7 +68,7 @@ class Generator:
             f"Conversation History: {conversation_history}.\n\n"
             f"Context: {documents}\n\n"
             f"Question: {query}\n\n"
-            f"If the question, can be answered using Conversation History, answer from Conversation History.\n"
+
 
         )
 
@@ -72,14 +76,21 @@ class Generator:
         response = openai_client_generator.chat.completions.create(
             model=self.model,
             messages=[
-                {"role": "system", "content": f"You are a financial assistant. Read the entire content carefully to find the exact information. The context may not have direct answer but if you look into it carefully and detailed specially the units of currency(comparison should be in same currency), you will infere the necessary inforamtion to find the answer. Then do simple mathematical analysis and report the answer and explain the reason for each calculation in detail. Also provide reference for answer."},
+                {"role": "system", "content": f"You are a financial assistant. "
+                f"Read the entire content carefully to find the exact information. "
+                f"The context may not have direct answer but if you look into it carefully and "
+                f"detailed specially the units of currency(comparison should always be in same currency), "
+                f"you will infere the necessary inforamtion to find the answer. Then do simple "
+                f"mathematical analysis and report the answer and explain the reason for each "
+                f"calculation in detail.  Also provide "
+                f"references(texts/setences, page number, part etc.) for answer as sentence where it "
+                f"can be found. At times, the questions are ambiguous or incomplete or vague, in that case, return 'I did not find the answer, please rephrase your question.'"},
                 {"role": "user", "content": prompt},
 
             ],
             temperature=0.5,
             max_tokens=2500
-        )
-
+        ) 
         output= response.choices[0].message.content
         print(output)
         return output
@@ -95,6 +106,7 @@ class Generator:
             f"Conversation History: {conversation_history}.\n\n"
             f"Context: {documents}\n\n"
             f"Question: {query}\n\n"
+            
 
         )
 
@@ -102,7 +114,15 @@ class Generator:
         response = openai_client_generator.chat.completions.create(
             model=self.model,
             messages=[
-                {"role": "system", "content": f"You are a financial assistant chatbot. Read the entire content carefully to find the exact information. The context may not have direct answer but if you look into it carefully and detailed specially the units of currency(comparison should be in same currency), you will infere the necessary inforamtion to find the answer. Then do simple mathematical analysis and report the answer and explain the reason for each calculation in your mind. Also provide reference for answer as sentence where it can be found."},
+                {"role": "system", "content": f"You are a financial assistant chatbot. "
+                f"Read the entire content carefully to find the exact information. The context may not "
+                f"have direct answer but if you look into it carefully and detailed specially the units "
+                f"of currency(comparison should always be in same currency), you will infere the necessary "
+                f"information to find the answer. Then do simple mathematical analysis and report the "
+                f"answer and explain the reason for each calculation in your mind. Also provide "
+                f"references(texts/setences, page number, part etc.) for answer as sentence where it "
+                f"can be found. If the question is vague, ambiguous, incomplete or without mentioning specific entity, and you are unsure "
+                f"of the answer, say 'I did not find the answer, please rephrase your question.'"},
                 {"role": "user", "content": prompt},
 
             ],
@@ -111,5 +131,4 @@ class Generator:
         )
 
         output= response.choices[0].message.content
-        print(output)
         return output
